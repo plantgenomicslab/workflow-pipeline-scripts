@@ -1,0 +1,641 @@
+#!/bin/sh
+#SBATCH --job-name=_your_job_name_here_
+#SBATCH --account=_your_account_name_here_
+#SBATCH --partition=_your_partition_name_here_
+#SBATCH --chdir=_your_working_directory_name_here_
+#SBATCH --ntasks=1
+#SBATCH --mem=65536M
+#SBATCH --cpus-per-task=32
+#SBATCH --output=sbatch.out
+#SBATCH --error=sbatch.err
+
+NCPU=32
+##
+# Root of all data
+PGL_ROOT=/data/gpfs/assoc/pgl
+GPFS_HOME=/data/gpfs/home
+SCRATCH=$GPFS_HOME/dcurdie/scratch
+
+##
+# Working directory
+WORKDIR=$PGL_ROOT/dcurdie/kalanchoe-repeatannotation
+
+##
+# Do we need some temp space..?
+TMPDIR=$PGL_ROOT/dcurdie/tmp
+
+DATADIR=$PGL_ROOT/dcurdie/dataref
+
+PERL=$GPFS_HOME/dcurdie/perl5/perlbrew/perls/perl-5.16.0/bin/perl
+
+# All transposase protein database: http://www.hrt.msu.edu/uploads/535/78637/Tpases020812.gz
+#  now repbase20.05_aaSeq_cleaned_TE.fa from wyim, based on Repbase
+# DNA transposase protein database: http://www.hrt.msu.edu/uploads/535/78637/Tpases020812DNA.gz
+#  now repbase20.05_aaSeq_classII_TE.fa from wyim, based on RepBase
+# Plant protein database: http://www.hrt.msu.edu/uploads/535/78637/alluniRefprexp070416.gz
+#  now uniprot_sprot.fasta from UniProtKB https://www.uniprot.org/downloads
+
+pushd $WORKDIR > /dev/null
+
+##
+# Based upon the process documented in:
+# http://weatherby.genetics.utah.edu/MAKER/wiki/index.php/Repeat_Library_Construction-Advanced
+##
+
+genome=Klaxiflora
+seqfile=$WORKDIR/phased.combined.fasta
+if [ ! -e $seqfile ]; then
+    echo "ERROR: Sequence file $seqfile not found" >&2
+    exit 1
+fi
+seqfileindex=SequenceIndex
+
+##
+# Run MITE-hunter
+# - where is it? Er, use MITE-Tracker instead: https://bmcbioinformatics.biomedcentral.com/articles/10.1186/s12859-018-2376-y
+#  MITE-Tracker needs to know where to find vsearch
+export VSEARCH_BINDIR=/data/gpfs/home/dcurdie/scratch/miniconda-3.7/bin
+seqfile=$(realpath $seqfile)
+DIR_MITE=$SCRATCH/MITE-Tracker
+if [ ! -d $DIR_MITE ]; then
+    echo "ERROR: MITE Tracker directory $MITE_DIR not found" >&2
+    exit 1
+fi
+if [ ! -e $DIR_MITE/MITETracker.py ]; then
+    echo "ERROR: MITE Tracker script not found in $MITE_DIR" >&2
+    exit 1
+fi
+[ ! -d repeats ] && mkdir repeats
+pushd repeats > /dev/null
+mkdir -p $(pwd)/results/$genome
+if [ ! -e $DIR_MITE/results/$genome ]; then 
+    ln -f -s $(pwd)/results/$genome $DIR_MITE/results/$genome
+fi
+python $DIR_MITE/MITETracker.py -g $seqfile -j $genome -w $NCPU 
+if [ "$?" != "0" ]; then
+    echo "ERROR: MITE Tracker exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -s results/$genome/all.fasta ]; then
+    echo "ERROR: MITE Tracker output file results/$genome/all.fasta not found" >&2
+    exit 1
+fi
+cp results/$genome/all.fasta > ../MITE.lib
+popd >/dev/null 2>&1
+
+##
+# Classify LTR retrotransposons
+
+# First, collection of candidate elements with LTRs that are 99% or more in similarity using LTRharvest
+DIR_GT=$SCRATCH/genometools-1.5.10/gt-1.5.10-Linux_x86_64-64bit-complete/bin  # http://genometools.org/ version 1.5.5
+DIR_CRL=$GPFS_HOME/dcurdie/repo/Custom-Repeat-Library  # https://github.com/plantgenomicslab/Custom-Repeat-Library
+$DIR_GT/gt suffixerator -db $seqfile -indexname $seqfileindex -tis -suf -lcp -des -ssp -dna
+if [ "$?" != "0" ]; then
+    echo "ERROR: Genometools suffixerator exited non-zero[$?]" >&2
+    exit 1
+fi
+for F in SequenceIndex.{des,esq,lcp,llv,md5,prj,sds,suf}; do 
+    if [ ! -e $F ]; then
+        echo "ERROR: Genometools suffixerator output file $F not found" >&2
+        exit 1
+    fi
+done
+$DIR_GT/gt ltrharvest -index $seqfileindex -out ${seqfile}.out99 -outinner ${seqfile}.outinner99 \
+     -gff3 ${seqfile}.gff99 -minlenltr 100 -maxlenltr 6000 -mindistltr 1500 -maxdistltr 25000 \
+     -mintsd 5 -maxtsd 5 -motif tgca -similar 99 -vic 10 > ${seqfile}.result99
+if [ "$?" != "0" ]; then
+    echo "ERROR: Genometools ltrharvest exited non-zero[$?]" >&2
+    exit 1
+fi
+for F in ${seqfile}.{out,outinner,gff}99; do
+    if [ ! -e $F ]; then
+        echo "ERROR: Genometools ltrharvest output file $F not found" >&2
+        exit 1
+    fi
+done
+
+# Second, using LTRdigest to find elements with PPT (poly purine tract) or PBS (primer binding site)
+$DIR_GT/gt gff3 -sort ${seqfile}.gff99 > ${seqfile}.gff99.sort
+if [ "$?" != "0" ]; then
+    echo "ERROR: Genometools gff3 exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -s ${seqfile}.gff99.sort ]; then
+    echo "ERROR: Zero-length output from genometools gff3" >&2
+    exit 1
+fi
+$DIR_GT/gt ltrdigest -trnas $DATADIR/eukaryotic-tRNAs.fa ${seqfile}.gff99.sort ${seqfileindex} > ${seqfile}.gff99.dgt
+if [ "$?" != "0" ]; then
+    echo "ERROR: Genometools ltrdigest exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -s ${seqfile}.gff99.dgt ]; then
+    echo "ERROR: Zero-length output from genometools ltrdigest" >&2
+    exit 1
+fi
+
+# make sure BioPerl is active/available...
+$PERL $DIR_CRL/CRL_Step1.pl --gff ${seqfile}.gff99.dgt
+if [ "$?" != "0" ]; then
+    echo "ERROR: CRL_Step1.pl exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -e CRL_Step1_Passed_Elements.txt ]; then
+    echo "ERROR: CRL_Step1.pl output file CRL_Step1_Passed_Elements.txt not found" >&2
+    exit 1
+fi
+
+# Third, further filtering of the candidate elements
+$PERL $DIR_CRL/CRL_Step2.pl --step1 CRL_Step1_Passed_Elements.txt --repeatfile ${seqfile}.out99 \
+    --resultfile ${seqfile}.result99 --sequencefile $seqfile --removed_repeats CRL_Step2_Passed_Elements.fasta
+if [ "$?" != "0" ]; then
+    echo "ERROR: CRL_Step2.pl exited non-zero[$?]" >&2
+    exit 1
+fi
+for F in {CRL_Step2_Passed_Elements,Repeat_down1,Repeat_up1}.fasta; do
+    if [ ! -e $F ]; then
+        echo "ERROR: CRL_Step2.pl output file $F not found" >&2
+        exit 1
+    fi
+done
+
+mkdir fasta_files
+mv Repeat_*.fasta fasta_files
+mv CRL_Step2_Passed_Elements.fasta fasta_files
+pushd fasta_files > /dev/null
+
+# this requires MUSCLE to be available
+$PERL $DIR_CRL/CRL_Step3.pl --directory $(pwd) --step2 CRL_Step2_Passed_Elements.fasta --pidentity 60 --seq_c 25
+if [ "$?" != "0" ]; then
+    echo "ERROR: CRL_Step3.pl exit non-zero[$?]" >&2
+    exit 1
+fi
+[ -e CRL_Step3_Passed_Elements.fasta ] && mv CRL_Step3_Passed_Elements.fasta ..
+rm -f Repeat_*.fasta
+popd > /dev/null
+if [ ! -e CRL_Step3_Passed_Elements.fasta ]; then
+    echo "ERROR: CRL_Step3.pl output file CRL_Step3_Passed_Elements.fasta not found" >&2
+    exit 1
+fi
+if [ ! -s CRL_Step3_Passed_Elements.fasta ]; then
+    echo "ERROR: Zero-length output from CRL_Step3.pl" >&2
+    exit 1
+fi
+
+# Fourth, identify elements with nested insertions
+$PERL $DIR_CRL/ltr_library.pl --resultfile ${seqfile}.result99 --step3 CRL_Step3_Passed_Elements.fasta --sequencefile $seqfile
+if [ "$?" != "0" ]; then
+    echo "ERROR: ltr_library.pl exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -e lLTR_Only.lib ]; then
+    echo "ERROR: ltr_library.pl output file lLTR_Only.lib not found" >&2
+    exit 1
+fi
+if [ ! -s lLTR_Only.lib ]; then
+    echo "ERROR: Zero-length output from ltrlibrary.pl" >&2
+    exit 1
+fi
+cat lLTR_Only.lib MITE.lib > repeats_to_mask_LTR99.fasta
+DIR_RM=$SCRATCH/RepeatMasker-open-4.0.8/RepeatMasker  # http://www.repeatmasker.org/
+$DIR_RM/RepeatMasker -pa $(($NCPU/4)) -lib repeats_to_mask_LTR99.fasta -nolow -dir . ${seqfile}.outinner99
+if [ "$?" != "0" ]; then
+    echo "ERROR: RepeatMasker exited non-zero[$?]" >&2
+    exit 1
+fi
+for F in ${seqfile}.outinner99.{masked,out}; do
+    if [ ! -e $F ]; then
+        echo "ERROR: RepeatMasker output file $F not found." >&2
+        exit 1
+    fi
+done
+
+$PERL $DIR_CRL/cleanRM.pl ${seqfile}.outinner99.out ${seqfile}.outinner99.masked > ${seqfile}.outinner99.unmasked
+if [ "$?" != "0" ]; then
+    echo "ERROR: cleanRM.pl exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -s ${seqfile}.outinner99.unmasked ]; then
+    echo "ERROR: Zero-length output file from cleanRM.pl" >&2
+    exit 1
+fi
+$PERL $DIR_CRL/rmshortinner.pl ${seqfile}.outinner99.unmasked 50 > ${seqfile}.outinner99.clean
+if [ "$?" != "0" ]; then
+    echo "ERROR: rmshortinner.pl exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -s ${seqfile}.outinner99.clean ]; then
+    echo "ERROR: Zero-length output from rmshortinner.pl" >&2
+    exit 1
+fi
+
+DIR_BLAST=$SCRATCH/blast+-2.7.1/ncbi-blast-2.7.1+/bin  # NCBI BLAST+
+if [ ! -e $DATADIR/repbase20.05_aaSeq_classII_TE.fa.pin ]; then
+    $DIR_BLAST/makeblastdb -in $DATADIR/repbase20.05_aaSeq_classII_TE.fa -dbtype prot
+    if [ "$?" != "0" ]; then
+        echo "ERROR: makeblastdb exited non-zero[$?]" >&2
+        exit 1
+    fi
+fi
+$DIR_BLAST/blastx -query ${seqfile}.outinner99.clean -db $DATADIR/repbase20.05_aaSeq_classII_TE.fa -evalue 1e-10 -num_descriptions 10 -num_threads $NCPU \
+    -out ${seqfile}.outinner99.clean_blastx.out.txt
+if [ "$?" != "0" ]; then
+    echo "ERROR: blastx exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -s ${seqfile}.outinner99.clean_blastx.out.txt ]; then
+    echo "ERROR: Zero-length output from blastx" >&2
+    exit 1
+fi
+$PERL $DIR_CRL/outinner_blastx_parse.pl --blastx ${seqfile}.outinner99.clean_blastx.out.txt --outinner  ${seqfile}.outinner99
+if [ "$?" != "0" ]; then
+    echo "ERROR: outinner_blastx_parse.pl exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -s passed_outinner_sequence.fasta ]; then
+    echo "ERROR: Zero-length output from outinner_blastx_parse.pl" >&2
+    exit 1
+fi
+
+# Fifth, building examplars
+$PERL $DIR_CRL/CRL_Step4.pl --step3 CRL_Step3_Passed_Elements.fasta --resultfile ${seqfile}.result99 \
+    --innerfile passed_outinner_sequence.fasta --sequencefile ${seqfile}
+if [ "$?" != "0" ]; then
+    echo "ERROR: CRL_Step4.pl exited non-zero[$?]" >&2
+    exit 1
+fi
+for F in {Inner,lLTRs}_Seq_For_BLAST.fasta; do
+    if [ ! -e $F ]; then
+        echo "ERROR CRL_Step4.pl output file $F not found" >&2
+        exit 1
+    fi
+done
+
+$DIR_BLAST/makeblastdb -in lLTRs_Seq_For_BLAST.fasta -dbtype nucl
+if [ "$?" != "0" ]; then
+    echo "ERROR: makeblastdb exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -e lLTRs_Seq_For_BLAST.fasta.nin ]; then
+    echo "ERROR: makeblastdb output file lLTRs_Seq_For_BLAST.fasta.nin not found" >&2
+    exit 1
+fi
+$DIR_BLAST/blastn -query lLTRs_Seq_For_BLAST.fasta -db lLTRs_Seq_For_BLAST.fasta -evalue 1e-10 -num_descriptions 1000 -num_threads $NCPU \
+    -out lLTRs_Seq_For_BLAST.fasta.out
+if [ "$?" != "0" ]; then
+    echo "ERROR: blastn exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -e lLTRs_Seq_For_BLAST.fasta.out ]; then
+    echo "ERROR: blastn output file lLTRs_Seq_For_BLAST.fasta.out not found" >&2
+    exit 1
+fi
+$DIR_BLAST/makeblastdb -in Inner_Seq_For_BLAST.fasta -dbtype nucl
+if [ "$?" != "0" ]; then
+    echo "ERROR: makeblastdb exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -e Inner_Seq_For_BLAST.fasta.nin ]; then
+    echo "ERROR: makeblastdb output file Inner_Seq_For_BLAST.fasta.nin not found" >&2
+    exit 1
+fi
+$DIR_BLAST/blastn -query Inner_Seq_For_BLAST.fasta -db Inner_Seq_For_BLAST.fasta -evalue 1e-10 -num_descriptions 1000 -num_threads $NCPU \
+    -out Inner_Seq_For_BLAST.fasta.out
+if [ "$?" != "0" ]; then
+    echo "ERROR: blastn exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -e Inner_Seq_For_BLAST.fasta.out ]; then
+    echo "ERROR: blastn output file Inner_Seq_For_BLAST.fasta.out not found" >&2
+    exit 1
+fi
+
+$PERL $DIR_CRL/CRL_Step5.pl --LTR_blast lLTRs_Seq_For_BLAST.fasta.out --inner_blast Inner_Seq_For_BLAST.fasta.out \
+    --step3 CRL_Step3_Passed_Elements.fasta --final LTR99.lib --pcoverage 90 --pidentity 80
+
+# Cleanup before proceeding
+rm -f CRL_Step1_Passed_Elements.txt CRL_Step2_Passed_Elements.fasta CRL_Step3_Passed_Elements.fasta lLTR_Only.lib \
+    passed_outinner_sequence.fasta lLTRs_Seq_For_BLAST.fasta* Inner_Seq_For_BLAST.fasta*
+
+##
+# Collection of relatively old LTR retrotransposons
+
+# Repeating Classify LTR above, but without motif and 99% similarity
+$DIR_GT/gt ltrharvest -index $seqfileindex -out ${seqfile}.out85 -outinner ${seqfile}.outinner85 \
+    -gff3 ${seqfile}.gff85 -minlenltr 100 -maxlenltr 6000 -mindistltr 1500 -maxdistltr 25000 \
+    -mintsd 5 -maxtsd 5 -vic 10 > ${seqfile}.result85
+if [ "$?" != "0" ]; then
+    echo "ERROR: Genometools ltrharvest exited non-zero[$?]" >&2
+    exit 1
+fi
+for F in ${seqfile}.{out,outinner,gff}85; do
+    if [ ! -e $F ]; then
+        echo "ERROR: Genometools ltrharvest output file $F not found" >&2
+        exit 1
+    fi
+done
+$DIR_GT/gt gff3 -sort ${seqfile}.gff85 > ${seqfile}.gff85.sort
+if [ "$?" != "0" ]; then
+    echo "ERROR: Genometools gff3 exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -s ${seqfile}.gff85.sort ]; then
+    echo "ERROR: Zero-length output from genometools gff3" >&2
+    exit 1
+fi
+$DIR_GT/gt ltrdigest -trnas $DATADIR/eukaryotic-tRNAs.fa ${seqfile}.gff85.sort ${seqfileindex} > ${seqfile}.gff85.dgt
+if [ "$?" != "0" ]; then
+    echo "ERROR: Genometools ltrdigest exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -s ${seqfile}.gff85.dgt ]; then
+    echo "ERROR: Zero-length output from genometools ltrdigest" >&2
+    exit 1
+fi
+
+$PERL $DIR_CRL/CRL_Step1.pl --gff ${seqfile}.gff85.dgt
+if [ "$?" != "0" ]; then
+    echo "ERROR: CRL_Step1.pl exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -e CRL_Step1_Passed_Elements.txt ]; then
+    echo "ERROR: CRL_Step1.pl output file CRL_Step1_Passed_Elements.txt not found" >&2
+    exit 1
+fi
+
+# further filtering of the candidate elements
+$PERL $DIR_CRL/CRL_Step2.pl --step1 CRL_Step1_Passed_Elements.txt --repeatfile ${seqfile}.out85 \
+    --resultfile ${seqfile}.result85 --sequencefile $seqfile --removed_repeats CRL_Step2_Passed_Elements.fasta
+if [ "$?" != "0" ]; then
+    echo "ERROR: CRL_Step2.pl exited non-zero[$?]" >&2
+    exit 1
+fi
+for F in {CRL_Step2_Passed_Elements,Repeat_down1,Repeat_up1}.fasta; do
+    if [ ! -e $F ]; then
+        echo "ERROR: CRL_Step2.pl output file $F not found" >&2
+        exit 1
+    fi
+done
+
+mkdir -p fasta_files  # probably got removed by prior run of CRL_Step3.pl
+mv Repeat_*.fasta fasta_files
+mv CRL_Step2_Passed_Elements.fasta fasta_files
+pushd fasta_files > /dev/null
+
+# this requires MUSCLE to be available
+$PERL $DIR_CRL/CRL_Step3.pl --directory $(pwd) --step2 CRL_Step2_Passed_Elements.fasta --pidentity 60 --seq_c 25
+if [ "$?" != "0" ]; then
+    echo "ERROR: CRL_Step3.pl exited non-zero[$?]" >&2
+    exit 1
+fi
+[ -f CRL_Step3_Passed_Elements.fasta ] && mv CRL_Step3_Passed_Elements.fasta ..
+rm -f Repeat_*.fasta
+popd > /dev/null
+if [ ! -e CRL_Step3_Passed_Elements.fasta ]; then
+    echo "ERROR: CRL_Step3.pl output file CRL_Step3_Passed_Elements.fasta not found" >&2
+    exit 1
+fi
+if [ ! -s CRL_Step3_Passed_Elements.fasta ]; then
+    echo "ERROR: Zero-length output from CRL_Step3.pl" >&2
+    exit 1
+fi
+
+# identify elements with nested insertions
+$PERL $DIR_CRL/ltr_library.pl --resultfile ${seqfile}.result85 --step3 CRL_Step3_Passed_Elements.fasta --sequencefile $seqfile
+if [ "$?" != "0" ]; then
+    echo "ERROR: ltr_library.pl exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -e lLTR_Only.lib ]; then
+    echo "ERROR: ltr_library.pl output file lLTR_Only.lib not found" >&2
+    exit 1
+fi
+if [ ! -s lLTR_Only.lib ]; then
+    echo "ERROR: Zero-length output from ltrlibrary.pl" >&2
+    exit 1
+fi
+cat lLTR_Only.lib MITE.lib > repeats_to_mask_LTR85.fasta
+$DIR_RM/RepeatMasker -pa $(($NCPU/4)) -lib repeats_to_mask_LTR85.fasta -nolow -dir . ${seqfile}.outinner85
+if [ "$?" != "0" ]; then
+    echo "ERROR: RepeatMasker exited non-zero[$?]" >&2
+    exit 1
+fi
+for F in ${seqfile}.outinner85.{masked,out}; do
+    if [ ! -e $F ]; then
+        echo "ERROR: RepeatMasker output file $F not found." >&2
+        exit 1
+    fi
+done
+
+$PERL $DIR_CRL/cleanRM.pl ${seqfile}.outinner85.out ${seqfile}.outinner85.masked > ${seqfile}.outinner85.unmasked
+if [ "$?" != "0" ]; then
+    echo "ERROR: cleanRM.pl exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -s ${seqfile}.outinner85.unmasked ]; then
+    echo "ERROR: Zero-length output from cleanPM.pl" >&2
+    exit 1
+fi
+
+$PERL $DIR_CRL/rmshortinner.pl ${seqfile}.outinner85.unmasked 50 > ${seqfile}.outinner85.clean
+if [ "$?" != "0" ]; then
+    echo "ERROR: rmshortinner.pl exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -s ${seqfile}.outinner85.clean ]; then
+    echo "ERROR: Zero-length output from rmshortinner.pl" >&2
+    exit 1
+fi
+
+$DIR_BLAST/blastx -query ${seqfile}.outinner85.clean -db $DATADIR/repbase20.05_aaSeq_classII_TE.fa -evalue 1e-10 -num_descriptions 10 -num_threads $NCPU \
+    -out ${seqfile}.outinner85.clean_blastx.out.txt
+if [ "$?" != "0" ]; then
+    echo "ERROR: blastx exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -s ${seqfile}.outinner85.clean_blastx.out.txt ]; then
+    echo "ERROR: Zero-length output from blastx" >&2
+    exit 1
+fi
+
+$PERL $DIR_CRL/outinner_blastx_parse.pl --blastx ${seqfile}.outinner85.clean_blastx.out.txt --outinner  ${seqfile}.outinner85
+if [ "$?" != "0" ]; then
+    echo "ERROR: outinner_blastx_parse.pl exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -s passed_outinner_sequence.fasta ]; then
+    echo "ERROR: Zero-length output from outinner_blastx_parse.pl" >&2
+    exit 1
+fi
+
+# building examplars
+$PERL $DIR_CRL/CRL_Step4.pl --step3 CRL_Step3_Passed_Elements.fasta --resultfile ${seqfile}.result85 \
+    --innerfile passed_outinner_sequence.fasta --sequencefile ${seqfile}
+if [ "$?" != "0" ]; then
+    echo "ERROR: CRL_Step4.pl exited non-zero[$?]" >&2
+    exit 1
+fi
+for F in {Inner,lLTRs}_Seq_For_BLAST.fasta; do
+    if [ ! -e $F ]; then
+        echo "ERROR CRL_Step4.pl output file $F not found" >&2
+        exit 1
+    fi
+done
+
+$DIR_BLAST/makeblastdb -in lLTRs_Seq_For_BLAST.fasta -dbtype nucl
+if [ "$?" != "0" ]; then
+    echo "ERROR: makeblastdb exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -e lLTRs_Seq_For_BLAST.fasta.nin ]; then
+    echo "ERROR: makeblastdb output file lLTRs_Seq_For_BLAST.fasta.nin not found" >&2
+    exit 1
+fi
+$DIR_BLAST/blastn -query lLTRs_Seq_For_BLAST.fasta -db lLTRs_Seq_For_BLAST.fasta -evalue 1e-10 -num_descriptions 1000 -num_threads $NCPU \
+    -out lLTRs_Seq_For_BLAST.fasta.out
+if [ "$?" != "0" ]; then
+    echo "ERROR: blastn exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -e lLTRs_Seq_For_BLAST.fasta.out ]; then
+    echo "ERROR: blastn output file lLTRs_Seq_For_BLAST.fasta.out not found" >&2
+    exit 1
+fi
+$DIR_BLAST/makeblastdb -in Inner_Seq_For_BLAST.fasta -dbtype nucl
+if [ "$?" != "0" ]; then
+    echo "ERROR: makeblastdb exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -e Inner_Seq_For_BLAST.fasta.nin ]; then
+    echo "ERROR: makeblastdb output file Inner_Seq_For_BLAST.fasta.nin not found" >&2
+    exit 1
+fi
+$DIR_BLAST/blastn -query Inner_Seq_For_BLAST.fasta -db Inner_Seq_For_BLAST.fasta -evalue 1e-10 -num_descriptions 1000 -num_threads $NCPU \
+    -out Inner_Seq_For_BLAST.fasta.out
+if [ "$?" != "0" ]; then
+    echo "ERROR: blastn exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -e Inner_Seq_For_BLAST.fasta.out ]; then
+    echo "ERROR: blastn output file Inner_Seq_For_BLAST.fasta.out not found" >&2
+    exit 1
+fi
+
+$PERL $DIR_CRL/CRL_Step5.pl --LTR_blast lLTRs_Seq_For_BLAST.fasta.out --inner_blast Inner_Seq_For_BLAST.fasta.out \
+    --step3 CRL_Step3_Passed_Elements.fasta --final LTR85.lib --pcoverage 90 --pidentity 80
+if [ "$?" != "0" ]; then
+    echo "ERROR: CRL_Step5.pl exited non-zero" >&2
+    exit 1
+fi
+if [ ! -e LTR85.lib ]; then
+    echo "ERROR: CRL_Step5.pl output file LTR85.lib not found" >&2
+    exit 1
+fi
+
+# Cleanup before proceeding
+rm -f CRL_Step1_Passed_Elements.txt CRL_Step2_Passed_Elements.fasta CRL_Step3_Passed_Elements.fasta lLTR_Only.lib \
+    passed_outinner_sequence.fasta lLTRs_Seq_For_BLAST.fasta* Inner_Seq_For_BLAST.fasta*
+
+# filter first set of LTRs
+$DIR_RM/RepeatMasker -pa $(($NCPU/4)) -lib LTR99.lib -dir . LTR85.lib
+if [ "$?" != "0" ]; then
+    echo "ERROR: RepeatMasker exited non-zero[$?]" >&2
+    exit 1
+fi
+for F in LTR85.lib.{masked,out}; do
+    if [ ! -e $F ]; then
+        echo "ERROR: RepeatMasker output file $F not found" >&2
+        exit 1
+    fi
+done
+
+$PERL $DIR_CRL/remove_masked_sequence.pl --masked_elements LTR85.lib.masked --outfile FinalLTR85.lib
+if [ "$?" != "0" ]; then
+    echo "ERROR: remove_masked_sequence.pl exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -e FinalLTR85.lib ]; then
+    echo "ERROR: remove_masked_sequence.pl output file FinalLTR85.lib not found" >&2
+    exit 1
+fi
+
+cat LTR99.lib FinalLTR85.lib > allLTR.lib
+
+##
+# Collecting repetitive sequences by RepeatModeler
+
+cat allLTR.lib MITE.lib > allMITE_LTR.lib
+$DIR_RM/RepeatMasker -pa $(($NCPU/4)) -lib allMITE_LTR.lib -dir . ${seqfile}
+if [ "$?" != "0" ]; then
+    echo "ERROR: RepeatMasker exited non-zero[$?]" >&2
+    exit 1
+fi
+for F in ${seqfile}.{masked,out}; do
+    if [ ! -e $F ]; then
+        echo "ERROR: RepeatMasker output file $F not found" >&2
+        exit 1
+    fi
+done
+
+$PERL $DIR_CRL/rmaskedpart.pl ${seqfile}.masked 50 > umseqfile
+if [ "$?" != "0" ]; then
+    echo "ERROR: rmaskedpart.pl exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -s umseqfile ]; then
+    echo "ERROR: Zero-length output file from rmaskedpart.pl" >&2
+    exit 1
+fi
+
+#DIR_RD=$GPFS_HOME/dcurdie/scratch/RepeatModeler-2.0  # http://www.repeatmasker.org/RepeatModeler.html
+DIR_RD=$GPFS_HOME/dcurdie/scratch/RepeatModeler-2.0  # http://www.repeatmasker.org/RepeatModeler.html
+$PERL $DIR_RD/BuildDatabase -name umseqfiledb -engine ncbi umseqfile
+if [ "$?" != "0" ]; then
+    echo "ERROR: BuildDatabase exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -e umseqfiledb.nin ]; then
+    echo "ERROR: BuildDatabase output file umseqfile.nin not found" >&2
+    exit 1
+fi
+
+$PERL $DIR_RD/RepeatModeler -pa $NCPU -database umseqfiledb >umseqfile.out
+
+echo "DONE WITH TESTED SCRIPT" >&2
+exit 0
+
+$PERL $DIR_CRL/repeatmodeler_parse.pl --fastafile consensi.fa.classified --unknowns repeatmodeler_unknowns.fasta \
+    --identities repeatmodeler_identities.fasta
+
+if [ ! -e $DATADIR/repbase20.05_aaSeq_cleaned_TE.fa.pin ]; then
+    $DIR_BLAST/makeblastdb -in $DATADIR/repbase20.05_aaSeq_cleaned_TE.fa -dbtype prot
+    if [ "$?" != "0" ]; then
+        echo "ERROR: makeblastdb exited non-zero[$?]" >&2
+        exit 1
+    fi
+fi
+$DIR_BLAST/blastx -query repeatmodeler_unknowns.fasta -db $DATADIR/repbase20.05_aaSeq_cleaned_TE.fa -evalue 1e-10 -num_descriptions 10 -num_threads $NCPU \
+    -out modelerunknown_blast_results.txt
+$PERL $DIR_CRL/transposon_blast_parse.pl --blastx modelerunknown_blast_results.txt --modelerunknown repeatmodeler_unknowns.fasta
+
+mv unknown_elements.txt ModelerUnknown.lib
+cat identified_elements.txt repeatmodeler_identities.fasta > ModelerID.lib
+
+##
+# Exclusion of gene fragments
+
+if [ ! -e $DATADIR/uniprot_sprot.fasta.pin ]; then
+    $DIR_BLAST/makeblastdb -in $DATADIR/uniprot_sprot.fasta -type prot
+    if [ "$?" != "0" ]; then
+        echo "ERROR: makeblastdb exited non-zero[$?]" >&2
+        exit 1
+    fi
+fi
+$DIR_BLAST/blastx -query ModelerUnknown.lib -db $DATADIR/uniprot_sprot.fasta -evalue 1e-10 -num_descriptions 10 -num_threads $NCPU \
+    -out ModelerUnknown.lib_blast_results.txt
+
+DIR_PE=  # http://www.hrt.msu.edu/uploads/535/78637/ProtExcluder1.2.tar.gz
+$DIR_PE/ProtExcluder.pl -option ModelerUnknown.lib_blast_results.txt ModelerUnknown.lib
+
+
+
