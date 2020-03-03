@@ -49,11 +49,11 @@ fi
 ##
 # Partition step
 RE_SITES="GATCGATC,GAATGATC,GATTGATC,GACTGATC,GAGTGATC,GAATAATC,GAATATTC,GAATACTC,GAATAGTC,GTATAATC,GTATATTC,GTATACTC,GTATAGTC,GCATAATC,GCATATTC,GCATACTC,GCATAGTC,GGATAATC,GGATATTC,GGATACTC,GGATAGTC,GATCAATC,GATCATTC,GATCACTC,GATCAGTC"
-NOCTGS=10
-log_info "Partitioning pruned BAM "
-$ALLHIC/bin/ALLHiC_partition -b prunning.bam -r $REFSEQ -e $RE_SITES -k $NOCTGS |& tee -a $OUTFILE
+# Eliminate use of ALLHiC_partition and call allhic partition / extract directly
+log_info "Extracting pruned BAM"
+$ALLHIC/bin/allhic extract --RE="$RE_SITES" prunning.bam $REFSEQ |& tee -a $OUTFILE
 if [ $? != 0 ]; then
-    log_error "ALLHiC_partition exited non-zero[$?]"
+    log_error "allhic extract exited non-zero[$?]"
     exit 1
 fi
 for FILE_NAME in prunning.{clm,distribution.txt,pairs.txt,counts_${RE_SITES//,/_}.txt} ; do
@@ -62,10 +62,22 @@ for FILE_NAME in prunning.{clm,distribution.txt,pairs.txt,counts_${RE_SITES//,/_
         exit 1
     fi
 done
-## HACK: need to fix ALLHiC_partition or allhic so that output files match
 if [ -e prunning.counts_${RE_SITES//,/_}.txt -a ! -e prunning.counts_${RE_SITES}.txt ]; then
     ln -f -s prunning.counts_${RE_SITES//,/_}.txt prunning.counts_${RE_SITES}.txt
 fi
+log_info "Partitioning pruned BAM "
+NOCTGS=10
+$ALLHIC/bin/allhic partition prunning.counts_${RE_SITES}.txt prunning.pairs.txt $NOCTGS --minREs 25 |& tee -a $OUTFILE
+if [ $? != 0 ]; then
+    log_error "allhic partition exited non-zero[$?]"
+    exit 1
+fi
+for i in $(seq 1 $NOCTGS); do
+    if [ ! -e prunning.counts_${RE_SITES}.${NOCTGS}g${i}.txt ]; then
+        log_error "allhic partition output file prunning.counts.${NOCTGS}g${i}.txt not found"
+        exit 1
+    fi
+done
 
 ##
 # Rescue step (Skipping)
@@ -76,32 +88,30 @@ fi
 
 ##
 # Optimize step
-log_info "Extracting BAM using restriction enzyme sites $RE_SITES"
-$ALLHIC/bin/allhic extract $BAM $REFSEQ --RE $RE_SITES |& tee -a $OUTFILE
-if [ $? != 0 ]; then
-    log_error "allhic extract exited non-zero[$?]"
-    exit 1
-fi
+#
+# This next bit is per the wiki, but we're going to continue using the results
+# from extracting / partitioning the pruned BAM
+#log_info "Extracting BAM using restriction enzyme sites $RE_SITES"
+#$ALLHIC/bin/allhic extract --RE="${RE_SITES}" sample.clean.bam $REFSEQ |& tee -a $OUTFILE
+#if [ $? != 0 ]; then
+#    log_error "allhic extract exited non-zero[$?]"
+#    exit 1
+#fi
+#for FILE_NAME in sample.clean.{clm,distribution.txt,pairs.txt,counts_${RE_SITES//,/_}.txt} ; do
+#    if [ ! -s $FILE_NAME ]; then
+#        log_error "allhic extract ouput file $FILE_NAME does not exist or is zero-length"
+#        exit 1
+#    fi
+#done
 
-log_info "End of known outputs. Terminating script."
-exit 0
-
-if [ ! -s SOME_FILE_NAME_HERE ]; then
-    log_error "allhic extract ouput file SOME_FILE_NAME_HERE does not exist or is zero-length"
-    exit 1
-fi
 IDX=0
-CLM=${BAM/bam/clm}
+CLM=prunning.clm
 while [ $IDX -le $NOCTGS ]; do
     IDX=$(($IDX+1))
     log_info "Running optimize pass $IDX..."
-    $ALLHIC/bin/allhic optimize group${IDX}.txt $CLM |& tee -a $OUTFILE
+    $ALLHIC/bin/allhic optimize prunning.counts_${RE_SITES}.${NOCTGS}g${IDX}.txt $CLM |& tee -a $OUTFILE
     if [ $? != 0 ]; then
         log_error "allhic optimize exited non-zero[$?]"
-        exit 1
-    fi
-    if [ ! -s SOME_FILE_NAME_HERE ]; then
-        log_error "allhic optimize output file SOME_FILE_NAME_HERE does not exist or is zero-length"
         exit 1
     fi
 done
@@ -119,9 +129,12 @@ if [ ! -s SOME_FILE_NAME_HERE ]; then
     exit 1
 fi
 
+log_info "End of known outputs. Terminating script."
+exit 0
+
 ##
 # Plot step
-GROUPS=
+GROUPS=groups.agp
 CHRN=
 SIZE=500k
 FORMAT=pdf
@@ -137,7 +150,6 @@ if [ ! -s SOME_FILE_NAME_HERE ]; then
 fi
 
 log_info "Run complete"
-
 touch run.done
 exit 0
 

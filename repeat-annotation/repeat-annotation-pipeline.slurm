@@ -36,6 +36,7 @@ PERL=$GPFS_HOME/dcurdie/perl5/perlbrew/perls/perl-5.16.0/bin/perl
 #  now uniprot_sprot.fasta from UniProtKB https://www.uniprot.org/downloads
 
 pushd $WORKDIR > /dev/null
+[ ! -d repeats ] && mkdir repeats
 
 ##
 # Based upon the process documented in:
@@ -65,7 +66,6 @@ if [ ! -e $DIR_MITE/MITETracker.py ]; then
     echo "ERROR: MITE Tracker script not found in $MITE_DIR" >&2
     exit 1
 fi
-[ ! -d repeats ] && mkdir repeats
 pushd repeats > /dev/null
 mkdir -p $(pwd)/results/$genome
 if [ ! -e $DIR_MITE/results/$genome ]; then 
@@ -80,7 +80,7 @@ if [ ! -s results/$genome/all.fasta ]; then
     echo "ERROR: MITE Tracker output file results/$genome/all.fasta not found" >&2
     exit 1
 fi
-cp results/$genome/all.fasta > ../MITE.lib
+cp results/$genome/all.fasta ../MITE.lib
 popd >/dev/null 2>&1
 
 ##
@@ -587,7 +587,6 @@ if [ ! -s umseqfile ]; then
     exit 1
 fi
 
-#DIR_RD=$GPFS_HOME/dcurdie/scratch/RepeatModeler-2.0  # http://www.repeatmasker.org/RepeatModeler.html
 DIR_RD=$GPFS_HOME/dcurdie/scratch/RepeatModeler-2.0  # http://www.repeatmasker.org/RepeatModeler.html
 $PERL $DIR_RD/BuildDatabase -name umseqfiledb -engine ncbi umseqfile
 if [ "$?" != "0" ]; then
@@ -600,13 +599,29 @@ if [ ! -e umseqfiledb.nin ]; then
 fi
 
 $PERL $DIR_RD/RepeatModeler -pa $NCPU -database umseqfiledb >umseqfile.out
+if [ "$?" != "0" ]; then
+    echo "ERROR: RepeatModeler exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -s umseqfile.out ]; then
+    echo "ERROR: RepeatModeler output file umseqfile.out does not exist or is zero-length" >&2
+    exit 1
+fi
 
-echo "DONE WITH TESTED SCRIPT" >&2
-exit 0
-
+##
+# the file consensi.fa.classified will be in a RM_<PID>.<TIMESTAMP> subdirectory. need to find it...
 $PERL $DIR_CRL/repeatmodeler_parse.pl --fastafile consensi.fa.classified --unknowns repeatmodeler_unknowns.fasta \
     --identities repeatmodeler_identities.fasta
-
+if [ "$?" != "0" ]; then
+    echo "ERROR: repeatmodeler_parse.pl exited not-zero[$?]" >&2
+    exit 1
+fi
+for F in repeatmodeler_{unknowns,identities}.fasta; do
+    if [ ! -e $F ]; then
+        echo "ERROR: repeatmodeler_parse.pl output file $F not found" >&2
+        exit 1
+    fi
+done
 if [ ! -e $DATADIR/repbase20.05_aaSeq_cleaned_TE.fa.pin ]; then
     $DIR_BLAST/makeblastdb -in $DATADIR/repbase20.05_aaSeq_cleaned_TE.fa -dbtype prot
     if [ "$?" != "0" ]; then
@@ -616,13 +631,31 @@ if [ ! -e $DATADIR/repbase20.05_aaSeq_cleaned_TE.fa.pin ]; then
 fi
 $DIR_BLAST/blastx -query repeatmodeler_unknowns.fasta -db $DATADIR/repbase20.05_aaSeq_cleaned_TE.fa -evalue 1e-10 -num_descriptions 10 -num_threads $NCPU \
     -out modelerunknown_blast_results.txt
+if [ "$?" != "0" ]; then
+    echo "ERROR: blastx exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -s modelerunknown_blast_results.txt ]; then
+    echo "ERROR: zero-length output file from blastx: modelerunknown_blast_results.txt" >&2
+    exit 1
+fi
 $PERL $DIR_CRL/transposon_blast_parse.pl --blastx modelerunknown_blast_results.txt --modelerunknown repeatmodeler_unknowns.fasta
+if [ "$?" != "0" ]; then
+    echo "ERROR: transposon_blast_parse.pl exited non-zero[$?]" >&2
+    exit 1
+fi
+if [ ! -s unknown_elements.txt ]; then
+    echo "ERROR: zero-length output file from transposon_blast_parse.pl" >&2
+    exit 1
+fi
 
 mv unknown_elements.txt ModelerUnknown.lib
 cat identified_elements.txt repeatmodeler_identities.fasta > ModelerID.lib
 
 ##
 # Exclusion of gene fragments
+DIR_PE=$SCRATCH/ProtExcluder1.2  # http://www.hrt.msu.edu/uploads/535/78637/ProtExcluder1.2.tar.gz
+export PATH=$PATH:$DIR_PE
 
 if [ ! -e $DATADIR/uniprot_sprot.fasta.pin ]; then
     $DIR_BLAST/makeblastdb -in $DATADIR/uniprot_sprot.fasta -type prot
@@ -631,11 +664,28 @@ if [ ! -e $DATADIR/uniprot_sprot.fasta.pin ]; then
         exit 1
     fi
 fi
-$DIR_BLAST/blastx -query ModelerUnknown.lib -db $DATADIR/uniprot_sprot.fasta -evalue 1e-10 -num_descriptions 10 -num_threads $NCPU \
-    -out ModelerUnknown.lib_blast_results.txt
 
-DIR_PE=  # http://www.hrt.msu.edu/uploads/535/78637/ProtExcluder1.2.tar.gz
-$DIR_PE/ProtExcluder.pl -option ModelerUnknown.lib_blast_results.txt ModelerUnknown.lib
+for LIB in ModelerID.lib ModelerUnknown.lib allMITE_LTR.lib; do
+    $DIR_BLAST/blastx -query $LIB -db $DATADIR/uniprot_sprot.fasta -evalue 1e-10 -num_descriptions 10 -num_threads $NCPU \
+        -out ${LIB}_blast_results.txt
+    if [ "$?" != "0" ]; then
+        echo "ERROR: blastx of $LIB exited non-zero[$?]" >&2
+        exit 1
+    fi
+    if [ ! -s ${LIB}_blast_results.txt ]; then
+        echo "ERROR: zero-length output file from blastx: ${LIB}_blast_results.txt" >&2
+        exit 1
+    fi
 
+    $PERL $DIR_PE/ProtExcluder.pl ${LIB}_blast_results.txt ${LIB}
+    if [ "$?" != "0" ]; then
+        echo "ERROR: ProtExcluder.pl exited non-zero[$?]" >&2
+        exit 1
+    fi
+    if [ ! -e ${LIB}noProtFinal ]; then
+        echo "ERROR: ProtExcluder.pl output file ${LIB}noProtFinal not found" >&2
+        exit 1
+    fi
+done
 
-
+echo "Run complete"
