@@ -1,0 +1,9 @@
+__default__:
+  account: cpu-s1-pgl-0
+  error: logs/cluster/{rule}.{wildcards}.err
+  memory: 64g
+  name: JOBNAME.{rule}.{wildcards}
+  ncpus: 16
+  nodes: 1
+  output: logs/cluster/{rule}.{wildcards}.out
+  partition: cpu-s1-pgl-0

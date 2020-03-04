@@ -1,0 +1,7 @@
+sample	unit	fq1	fq2
+DT1	001	data/reads/DT1_R1_001.fastq.gz	data/reads/DT1_R2_001.fastq.gz
+DT2	001	data/reads/DT2_R1_001.fastq.gz	data/reads/DT2_R2_001.fastq.gz
+DT3	001	data/reads/DT3_R1_001.fastq.gz	data/reads/DT3_R2_001.fastq.gz
+WT1	001	data/reads/WT1_R1_001.fastq.gz	data/reads/WT1_R2_001.fastq.gz
+WT2	001	data/reads/WT2_R1_001.fastq.gz	data/reads/WT2_R2_001.fastq.gz
+WT3	001	data/reads/WT3_R1_001.fastq.gz	data/reads/WT3_R2_001.fastq.gz

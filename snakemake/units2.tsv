@@ -1,0 +1,5 @@
+sample	unit	platform	fq1	fq2
+Opcoch_S1_L001	001	ILLUMINA	data/reads/OchgDNA_S1_L001_R1_001.fastq.gz	data/reads/OchgDNA_S1_L001_R2_001.fastq.gz
+Opcoch_S1_L002	001	ILLUMINA	data/reads/OchgDNA_S1_L002_R1_001.fastq.gz	data/reads/OchgDNA_S1_L002_R2_001.fastq.gz
+Opcoch_S1_L003	001	ILLUMINA	data/reads/OchgDNA_S1_L003_R1_001.fastq.gz	data/reads/OchgDNA_S1_L003_R2_001.fastq.gz
+Opcoch_S1_L004	001	ILLUMINA	data/reads/OchgDNA_S1_L004_R1_001.fastq.gz	data/reads/OchgDNA_S1_L004_R2_001.fastq.gz

@@ -1,0 +1,13 @@
+{
+  "__default__": {
+    "account": "cpu-s1-pgl-0",
+    "memory": "64g",
+    "name": "JOBNAME.{rule}.{wildcards}",
+    "ncpus": 16,
+    "nodes": 1,
+    "partition": "cpu-s1-pgl-0",
+    "time": "08:00:00",
+    "output": "logs/cluster/{rule}.out",
+    "error": "logs/cluster/{rule}.err"
+  }
+}
