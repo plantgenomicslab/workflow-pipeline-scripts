@@ -6,6 +6,8 @@
 #SBATCH --ntasks=1
 #SBATCH --mem=65536M
 #SBATCH --cpus-per-task=32
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=_your_notification_email_here_
 #SBATCH --output=sbatch.out
 #SBATCH --error=sbatch.err
 
@@ -18,7 +20,7 @@ SCRATCH=$GPFS_HOME/dcurdie/scratch
 
 ##
 # Working directory
-WORKDIR=$PGL_ROOT/dcurdie/kalanchoe-repeatannotation
+WORKDIR=$PGL_ROOT/dcurdie/bcarinata-repeatannotation
 
 ##
 # Do we need some temp space..?
@@ -43,8 +45,8 @@ pushd $WORKDIR > /dev/null
 # http://weatherby.genetics.utah.edu/MAKER/wiki/index.php/Repeat_Library_Construction-Advanced
 ##
 
-genome=Klaxiflora
-seqfile=$WORKDIR/phased.combined.fasta
+genome=Bcarinata
+seqfile=$WORKDIR/BcaBC.fasta
 if [ ! -e $seqfile ]; then
     echo "ERROR: Sequence file $seqfile not found" >&2
     exit 1
@@ -66,21 +68,19 @@ if [ ! -e $DIR_MITE/MITETracker.py ]; then
     echo "ERROR: MITE Tracker script not found in $MITE_DIR" >&2
     exit 1
 fi
+mkdir -p $(pwd)/repeats/results/$genome
+ln -f -s $(pwd)/repeats/results/$genome $DIR_MITE/results/$genome
 pushd repeats > /dev/null
-mkdir -p $(pwd)/results/$genome
-if [ ! -e $DIR_MITE/results/$genome ]; then 
-    ln -f -s $(pwd)/results/$genome $DIR_MITE/results/$genome
-fi
 python $DIR_MITE/MITETracker.py -g $seqfile -j $genome -w $NCPU 
 if [ "$?" != "0" ]; then
     echo "ERROR: MITE Tracker exited non-zero[$?]" >&2
     exit 1
 fi
 if [ ! -s results/$genome/all.fasta ]; then
-    echo "ERROR: MITE Tracker output file results/$genome/all.fasta not found" >&2
+    echo "ERROR: MITE Tracker output file repeats/results/$genome/all.fasta not found" >&2
     exit 1
 fi
-cp results/$genome/all.fasta ../MITE.lib
+cp results/$genome/all.fasta > ../MITE.lib
 popd >/dev/null 2>&1
 
 ##
@@ -100,6 +100,7 @@ for F in SequenceIndex.{des,esq,lcp,llv,md5,prj,sds,suf}; do
         exit 1
     fi
 done
+
 $DIR_GT/gt ltrharvest -index $seqfileindex -out ${seqfile}.out99 -outinner ${seqfile}.outinner99 \
      -gff3 ${seqfile}.gff99 -minlenltr 100 -maxlenltr 6000 -mindistltr 1500 -maxdistltr 25000 \
      -mintsd 5 -maxtsd 5 -motif tgca -similar 99 -vic 10 > ${seqfile}.result99
@@ -124,6 +125,7 @@ if [ ! -s ${seqfile}.gff99.sort ]; then
     echo "ERROR: Zero-length output from genometools gff3" >&2
     exit 1
 fi
+
 $DIR_GT/gt ltrdigest -trnas $DATADIR/eukaryotic-tRNAs.fa ${seqfile}.gff99.sort ${seqfileindex} > ${seqfile}.gff99.dgt
 if [ "$?" != "0" ]; then
     echo "ERROR: Genometools ltrdigest exited non-zero[$?]" >&2
@@ -197,6 +199,7 @@ if [ ! -s lLTR_Only.lib ]; then
     exit 1
 fi
 cat lLTR_Only.lib MITE.lib > repeats_to_mask_LTR99.fasta
+
 DIR_RM=$SCRATCH/RepeatMasker-open-4.0.8/RepeatMasker  # http://www.repeatmasker.org/
 $DIR_RM/RepeatMasker -pa $(($NCPU/4)) -lib repeats_to_mask_LTR99.fasta -nolow -dir . ${seqfile}.outinner99
 if [ "$?" != "0" ]; then
@@ -247,6 +250,7 @@ if [ ! -s ${seqfile}.outinner99.clean_blastx.out.txt ]; then
     echo "ERROR: Zero-length output from blastx" >&2
     exit 1
 fi
+
 $PERL $DIR_CRL/outinner_blastx_parse.pl --blastx ${seqfile}.outinner99.clean_blastx.out.txt --outinner  ${seqfile}.outinner99
 if [ "$?" != "0" ]; then
     echo "ERROR: outinner_blastx_parse.pl exited non-zero[$?]" >&2
@@ -280,6 +284,7 @@ if [ ! -e lLTRs_Seq_For_BLAST.fasta.nin ]; then
     echo "ERROR: makeblastdb output file lLTRs_Seq_For_BLAST.fasta.nin not found" >&2
     exit 1
 fi
+
 $DIR_BLAST/blastn -query lLTRs_Seq_For_BLAST.fasta -db lLTRs_Seq_For_BLAST.fasta -evalue 1e-10 -num_descriptions 1000 -num_threads $NCPU \
     -out lLTRs_Seq_For_BLAST.fasta.out
 if [ "$?" != "0" ]; then
@@ -290,6 +295,7 @@ if [ ! -e lLTRs_Seq_For_BLAST.fasta.out ]; then
     echo "ERROR: blastn output file lLTRs_Seq_For_BLAST.fasta.out not found" >&2
     exit 1
 fi
+
 $DIR_BLAST/makeblastdb -in Inner_Seq_For_BLAST.fasta -dbtype nucl
 if [ "$?" != "0" ]; then
     echo "ERROR: makeblastdb exited non-zero[$?]" >&2
@@ -299,6 +305,7 @@ if [ ! -e Inner_Seq_For_BLAST.fasta.nin ]; then
     echo "ERROR: makeblastdb output file Inner_Seq_For_BLAST.fasta.nin not found" >&2
     exit 1
 fi
+
 $DIR_BLAST/blastn -query Inner_Seq_For_BLAST.fasta -db Inner_Seq_For_BLAST.fasta -evalue 1e-10 -num_descriptions 1000 -num_threads $NCPU \
     -out Inner_Seq_For_BLAST.fasta.out
 if [ "$?" != "0" ]; then
@@ -334,6 +341,7 @@ for F in ${seqfile}.{out,outinner,gff}85; do
         exit 1
     fi
 done
+
 $DIR_GT/gt gff3 -sort ${seqfile}.gff85 > ${seqfile}.gff85.sort
 if [ "$?" != "0" ]; then
     echo "ERROR: Genometools gff3 exited non-zero[$?]" >&2
@@ -343,6 +351,7 @@ if [ ! -s ${seqfile}.gff85.sort ]; then
     echo "ERROR: Zero-length output from genometools gff3" >&2
     exit 1
 fi
+
 $DIR_GT/gt ltrdigest -trnas $DATADIR/eukaryotic-tRNAs.fa ${seqfile}.gff85.sort ${seqfileindex} > ${seqfile}.gff85.dgt
 if [ "$?" != "0" ]; then
     echo "ERROR: Genometools ltrdigest exited non-zero[$?]" >&2
@@ -415,6 +424,7 @@ if [ ! -s lLTR_Only.lib ]; then
     exit 1
 fi
 cat lLTR_Only.lib MITE.lib > repeats_to_mask_LTR85.fasta
+
 $DIR_RM/RepeatMasker -pa $(($NCPU/4)) -lib repeats_to_mask_LTR85.fasta -nolow -dir . ${seqfile}.outinner85
 if [ "$?" != "0" ]; then
     echo "ERROR: RepeatMasker exited non-zero[$?]" >&2
@@ -491,6 +501,7 @@ if [ ! -e lLTRs_Seq_For_BLAST.fasta.nin ]; then
     echo "ERROR: makeblastdb output file lLTRs_Seq_For_BLAST.fasta.nin not found" >&2
     exit 1
 fi
+
 $DIR_BLAST/blastn -query lLTRs_Seq_For_BLAST.fasta -db lLTRs_Seq_For_BLAST.fasta -evalue 1e-10 -num_descriptions 1000 -num_threads $NCPU \
     -out lLTRs_Seq_For_BLAST.fasta.out
 if [ "$?" != "0" ]; then
@@ -501,6 +512,7 @@ if [ ! -e lLTRs_Seq_For_BLAST.fasta.out ]; then
     echo "ERROR: blastn output file lLTRs_Seq_For_BLAST.fasta.out not found" >&2
     exit 1
 fi
+
 $DIR_BLAST/makeblastdb -in Inner_Seq_For_BLAST.fasta -dbtype nucl
 if [ "$?" != "0" ]; then
     echo "ERROR: makeblastdb exited non-zero[$?]" >&2
@@ -510,6 +522,7 @@ if [ ! -e Inner_Seq_For_BLAST.fasta.nin ]; then
     echo "ERROR: makeblastdb output file Inner_Seq_For_BLAST.fasta.nin not found" >&2
     exit 1
 fi
+
 $DIR_BLAST/blastn -query Inner_Seq_For_BLAST.fasta -db Inner_Seq_For_BLAST.fasta -evalue 1e-10 -num_descriptions 1000 -num_threads $NCPU \
     -out Inner_Seq_For_BLAST.fasta.out
 if [ "$?" != "0" ]; then
@@ -588,6 +601,7 @@ if [ ! -s umseqfile ]; then
 fi
 
 DIR_RD=$GPFS_HOME/dcurdie/scratch/RepeatModeler-2.0  # http://www.repeatmasker.org/RepeatModeler.html
+#DIR_RD=$PGL_ROOT/bin/RepeatModeler-2.0  # http://www.repeatmasker.org/RepeatModeler.html
 $PERL $DIR_RD/BuildDatabase -name umseqfiledb -engine ncbi umseqfile
 if [ "$?" != "0" ]; then
     echo "ERROR: BuildDatabase exited non-zero[$?]" >&2
@@ -598,6 +612,8 @@ if [ ! -e umseqfiledb.nin ]; then
     exit 1
 fi
 
+export NSEG_COMMAND=$PGL_ROOT/bin/REPET/binary/bin/nseg  # this is needed for RepeatScout filter-stage-1.prl script
+RD_START=$(date '+%a%b%d%H%M%S%Y')
 $PERL $DIR_RD/RepeatModeler -pa $NCPU -database umseqfiledb >umseqfile.out
 if [ "$?" != "0" ]; then
     echo "ERROR: RepeatModeler exited non-zero[$?]" >&2
@@ -608,9 +624,20 @@ if [ ! -s umseqfile.out ]; then
     exit 1
 fi
 
+echo "Done with RepeatModeler. Please update me with the appropriate directory name to continue."
+RM_OUT_DIR=( RM_[0-9]*.${RD_START} )
+if [ -d $RM_OUT_DIR ]; then
+    echo "I think the RepeatModeler output dir is $RM_OUT_DIR"
+else
+    echo "ERROR: Unable to guess the RepeatModeler output dir" >&2
+    exit 1
+fi
+exit 0
+RM_OUT_DIR=RM_53226.SatMar281348512020
+
 ##
 # the file consensi.fa.classified will be in a RM_<PID>.<TIMESTAMP> subdirectory. need to find it...
-$PERL $DIR_CRL/repeatmodeler_parse.pl --fastafile consensi.fa.classified --unknowns repeatmodeler_unknowns.fasta \
+$PERL $DIR_CRL/repeatmodeler_parse.pl --fastafile $RM_OUT_DIR/consensi.fa.classified --unknowns repeatmodeler_unknowns.fasta \
     --identities repeatmodeler_identities.fasta
 if [ "$?" != "0" ]; then
     echo "ERROR: repeatmodeler_parse.pl exited not-zero[$?]" >&2
