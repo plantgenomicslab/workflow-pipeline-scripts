@@ -563,10 +563,10 @@ for F in LTR85.lib.{masked,out}; do
 done
 
 $PERL $DIR_CRL/remove_masked_sequence.pl --masked_elements LTR85.lib.masked --outfile FinalLTR85.lib
-if [ "$?" != "0" ]; then
-    echo "ERROR: remove_masked_sequence.pl exited non-zero[$?]" >&2
-    exit 1
-fi
+#if [ "$?" != "0" ]; then
+#    echo "ERROR: remove_masked_sequence.pl exited non-zero[$?]" >&2
+#    exit 1
+#fi
 if [ ! -e FinalLTR85.lib ]; then
     echo "ERROR: remove_masked_sequence.pl output file FinalLTR85.lib not found" >&2
     exit 1
