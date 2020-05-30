@@ -77,12 +77,12 @@ cd ../../
 
 
 
-### AUGUSTUS
+# AUGUSTUS
 mkdir -p augustus/round${i} && cd augustus/round${i}
 
 awk -v OFS="\t" '{ if ($3 == "mRNA") print $1, $4, $5 }' ../../${species}_${i}.all.maker_nofasta.gff | awk -v OFS="\t" '{ if ($2 < 1000) print $1, "0", $3+1000; else print $1, $2-1000, $3+1000 }' | bedtools getfasta -fi $seqfile -bed - -fo  ${species}_${i}.transcripts1000.fasta
 
-### CONDA
+### CONDA for BUSCO env
 source ~/scratch/bin/miniconda3/etc/profile.d/conda.sh
 conda activate busco
 
