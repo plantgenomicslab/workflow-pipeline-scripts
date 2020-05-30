@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-#
-# Source: https://github.com/rvalieris/parallel-fastq-dump
-#
 import sys
 import os
 import shutil
@@ -30,7 +27,7 @@ def pfd(args, srr_id, extra_args):
     for i in range(0,args.threads):
         d = os.path.join(tmp_dir.name, str(i))
         os.mkdir(d)
-        p = subprocess.Popen(["fastq-dump", "-N", str(blocks[i][0]), "-X", str(blocks[i][1]), "-O", d]+extra_args+[srr_id])
+        p = subprocess.Popen(["fastq-dump", "--split-3", "-N", str(blocks[i][0]), "-X", str(blocks[i][1]), "-O", d]+extra_args+[srr_id])
         ps.append(p)
 
     wfd = {}
