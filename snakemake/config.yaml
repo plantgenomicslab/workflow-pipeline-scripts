@@ -40,3 +40,55 @@ params:
   star: ""
   cutadapt-se: ""
   cutadapt-pe: ""
+
+##
+# Parameters for SRA data pull, populates samples.tsv and units.tsv
+sradata:
+  method: fasterq
+  outdir: data/reads
+  sra_list:
+  -
+    id: SRR000001
+    label: sampleA
+    condition: control
+    unit: rep1
+  -
+    id: SRR000002
+    label: sampleA
+    condition: control
+    unit: rep2
+  -
+    id: SRR000003
+    label: sampleA
+    condition: control
+    unit: rep3
+  -
+    id: SRR000004
+    label: sampleB
+    condition: week7
+    unit: rep1
+  -
+    id: SRR000005
+    label: sampleB
+    condition: week7
+    unit: rep2
+  -
+    id: SRR000006
+    label: sampleB
+    condition: week7
+    unit: rep3
+  -
+    id: SRR000007
+    label: sampleC
+    condition: ongoing
+    unit: rep1
+  -
+    id: SRR000008
+    label: sampleC
+    condition: ongoing
+    unit: rep2
+  -
+    id: SRR000009
+    label: sampleC
+    condition: ongoing
+    unit: rep3
