@@ -15,7 +15,7 @@ except ImportError:
     from yaml import Loader, Dumper
 
 logger = logging.getLogger('Prepopulate SRA Data')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.WARNING)
 handler = logging.StreamHandler()
 formatter = logging.Formatter('%(asctime)s %(levelname)s: %(filename)s[%(lineno)d] %(funcName)s - %(message)s',
                               datefmt='%F %T')
@@ -141,21 +141,37 @@ def pull_sra_data(config, sra_ids, threads=0):
         with tempfile.TemporaryDirectory() as tmp:
             args.tmpdir = tmp
             for accession in sra_ids:
-                logger.debug('Pulling SRA accession %s, threads "%s"', accession, threads)
-                pfd(args, accession, extra)
+                downloaded = True
+                for path in [os.path.join(outdir, f"{accession}{suffix}") for suffix in ['.fastq', '_1.fastq', '_2.fastq']]:
+                    if not os.path.exists(path):
+                        logger.warning('Missing SRA file %s. Re-downloading %s.', path, accession)
+                        downloaded = False
+                        break
+                if not downloaded:
+                    logger.info('Pulling SRA accession %s, threads "%s"', accession, threads)
+                    pfd(args, accession, extra)
+                else:
+                    logger.info('All files for %s already downloaded', accession)
         return True
     elif method == 'fasterq':
-        outdir = f"--outdir {outdir}"
+        outarg = f"--outdir {outdir}"
         threads = f"--threads {threads}" if threads else ""
         with tempfile.TemporaryDirectory() as tmp:
             for accession in sra_ids:
-                # How do I get snakemake.threads? snakemake is the active snakemake.script.Snakemake() instance
-                # This will definitely not exist if we're here from main()
-                logger.debug('Pulling SRA accession %s, threads "%s"', accession, threads)
-                shell(
-                    "fasterq-dump --temp {tmp} {threads} "
-                    "{extra} {outdir} {accession}"
-                )
+                downloaded = True
+                for path in [os.path.join(outdir, f"{accession}{suffix}") for suffix in ['.fastq', '_1.fastq', '_2.fastq']]:
+                    if not os.path.exists(path):
+                        logger.warning('Missing SRA file %s. Re-downloading %s.', path, accession)
+                        downloaded = False
+                        break
+                if not downloaded:
+                    logger.info('Pulling SRA accession %s, threads "%s"', accession, threads)
+                    shell(
+                        "fasterq-dump --temp {tmp} {threads} "
+                        "{extra} {outarg} {accession}"
+                    )
+                else:
+                    logger.info('All files for %s already downloaded', accession)
         return True
     return None
 
@@ -175,16 +191,19 @@ def write_samples_and_units_tsv(samples, units):
     return True
 
 def main():
+    logger.setLevel(logging.INFO)
     parser = argparse.ArgumentParser(description='Prepopulate SRA Data')
     parser.add_argument('--config', type=str,
                         help='YAML configuration file to load SRA info from')
     parser.add_argument('--threads', type=int,
                         help='Number of threads to use')
     args, extra = parser.parse_known_args()
+    logger.info('Args: %s, Extra: %s', args, extra)
     config = get_config_from_file(args.config)
     if not config:
         logger.error('Unable to get config from file %s', args.config)
         return 1
+    logger.info('Config:\n%s', pprint.pformat(config))
     if populate(config, args.threads):
         return 0
     logger.error('Failed to populate from config')
