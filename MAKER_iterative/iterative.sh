@@ -112,21 +112,14 @@ conda deactivate
 cd ../../../../../
 
 
+#### CTL file
 
-
-# transcript alignments
-#awk '{ if ($2 == "est2genome") print $0 }'  ${species}_1.all.maker_nofasta.gff > ${species}${i}.all.maker.est2genome.gff
-# protein alignments
-#awk '{ if ($2 == "protein2genome") print $0 }' ${species}_1.all.maker_nofasta.gff > ${species}${i}.all.maker.protein2genome.gff
 
 cp ${species}1.all.maker.est2genome.gff ${species}${i}.all.maker.est2genome.gff
 cp  ${species}1.all.maker.protein2genome.gff  ${species}${i}.all.maker.protein2genome.gff
 cp ${species}1.all.maker.repeats.gff ${species}${i}.all.maker.repeats.gff
 
-#awk '{ if ($2 ~ "repeat") print $0 }' ${species}_1.all.maker_nofasta.gff  | grep -v -e "Satellite" -e "Low_complexity" -e "Simple_repeat" | perl -ane '$id; if(!/^\#/){@F = split(/\t/, $_); chomp $F[-1];$id++; $F[-1] .= "\;ID=$id"; $_ = join("\t", @F)."\n"} print $_' \ >   ${species}${i}.all.maker.repeats.gff
 
-
-### CTL file
 k=$((i+1))
 cp round${i}_maker_opts.ctl round${k}_maker_opts.ctl
 
