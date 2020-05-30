@@ -536,10 +536,10 @@ fi
 
 $PERL $DIR_CRL/CRL_Step5.pl --LTR_blast lLTRs_Seq_For_BLAST.fasta.out --inner_blast Inner_Seq_For_BLAST.fasta.out \
     --step3 CRL_Step3_Passed_Elements.fasta --final LTR85.lib --pcoverage 90 --pidentity 80
-if [ "$?" != "0" ]; then
-    echo "ERROR: CRL_Step5.pl exited non-zero" >&2
-    exit 1
-fi
+#if [ "$?" != "0" ]; then
+#    echo "ERROR: CRL_Step5.pl exited non-zero" >&2
+#    exit 1
+#fi
 if [ ! -e LTR85.lib ]; then
     echo "ERROR: CRL_Step5.pl output file LTR85.lib not found" >&2
     exit 1
