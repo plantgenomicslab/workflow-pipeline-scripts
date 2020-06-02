@@ -2,6 +2,7 @@ import argparse
 import logging
 import os
 import pprint
+from subprocess import CalledProcessError
 import sys
 import tempfile
 
@@ -83,7 +84,7 @@ def populate(config, threads=0):
     if not (samples and sra_ids and units):
         logger.error('Failed to get samples and units data from configuration')
         return None
-    if not pull_sra_data(sradata, sra_ids, threads):
+    if not partition_sra_data(sradata, sra_ids, threads):
         logger.error('Failed to pull SRA data')
         return False
     try:
@@ -94,7 +95,7 @@ def populate(config, threads=0):
     return True
 
 
-def pull_sra_data(config, sra_ids, threads=0):
+def partition_sra_data(config, sra_ids, threads=0):
     if not config:
         logger.error('No configuration provided')
         return None
@@ -123,57 +124,74 @@ def pull_sra_data(config, sra_ids, threads=0):
             threads = ""
     else:
         threads = ""
-    if method == 'fastq':
-        args = argparse.Namespace()
-        args.minSpotId = 1
-        args.maxSpotId = None
-        if not os.path.exists(outdir):
-            os.makedirs(outdir)
-        args.outdir = outdir
-        args.threads = threads if threads else 1
-        if extra:
-            if isinstance(extra, (str, bytes)):
-                extra = extra.split()
-            elif not isinstance(extra, list):
-                extra = []
-        else:
-            extra = []
+
+    success = True
+    for accession in sra_ids:
+        if not pull_sra_data(accession, outdir):
+            logger.error('Unable to successfully pull all SRA data for %s', accession)
+            success = False
+            continue
+        suffixes = ['.fastq', '_1.fastq', '_2.fastq']
+        partitioned = True
+        for path in [os.path.join(outdir, f"{accession}{suffix}") for suffix in suffixes]:
+            if not os.path.exists(path):
+                logger.debug('Missing SRA file %s. Re-partitioning %s.', path, accession)
+                partitioned = False
+                break
+        if partitioned:
+            logger.info('SRA accession %s already partitioned', accession)
+            continue
+        for path in [os.path.join(outdir, f"{accession}{suffix}") for suffix in suffixes]:
+            if os.path.exists(path):
+                os.unlink(path)
         with tempfile.TemporaryDirectory() as tmp:
-            args.tmpdir = tmp
-            for accession in sra_ids:
-                downloaded = True
-                for path in [os.path.join(outdir, f"{accession}{suffix}") for suffix in ['.fastq', '_1.fastq', '_2.fastq']]:
-                    if not os.path.exists(path):
-                        logger.warning('Missing SRA file %s. Re-downloading %s.', path, accession)
-                        downloaded = False
-                        break
-                if not downloaded:
-                    logger.info('Pulling SRA accession %s, threads "%s"', accession, threads)
-                    pfd(args, accession, extra)
+            if method == 'fastq':
+                args = argparse.Namespace()
+                args.minSpotId = 1
+                args.maxSpotId = None
+                if not os.path.exists(outdir):
+                    os.makedirs(outdir)
+                args.outdir = outdir
+                args.threads = threads if threads else 1
+                if extra:
+                    if isinstance(extra, (str, bytes)):
+                        extra = extra.split()
+                    elif not isinstance(extra, list):
+                        extra = []
                 else:
-                    logger.info('All files for %s already downloaded', accession)
-        return True
-    elif method == 'fasterq':
-        outarg = f"--outdir {outdir}"
-        threads = f"--threads {threads}" if threads else ""
-        with tempfile.TemporaryDirectory() as tmp:
-            for accession in sra_ids:
-                downloaded = True
-                for path in [os.path.join(outdir, f"{accession}{suffix}") for suffix in ['.fastq', '_1.fastq', '_2.fastq']]:
+                    extra = []
+                extra.extend(['--log-level', '0'])
+                args.tmpdir = tmp
+                logger.info('Partitioning SRA accession %s, threads "%s"', accession, threads)
+                pfd(args, f"{outdir}/{accession}", extra)
+                for path in [os.path.join(outdir, f"{accession}{suffix}") for suffix in suffixes]:
                     if not os.path.exists(path):
-                        logger.warning('Missing SRA file %s. Re-downloading %s.', path, accession)
-                        downloaded = False
-                        break
-                if not downloaded:
-                    logger.info('Pulling SRA accession %s, threads "%s"', accession, threads)
-                    shell(
-                        "fasterq-dump --temp {tmp} {threads} "
-                        "{extra} {outarg} {accession}"
-                    )
-                else:
-                    logger.info('All files for %s already downloaded', accession)
+                        logger.error('Failed to partition SRA accession %s', accession)
+                        success = False
+            elif method == 'fasterq':
+                outarg = f"--outdir {outdir}"
+                targ = f"--threads {threads}" if threads else ""
+                logger.info('Partitioning SRA accession %s, threads "%s"', accession, threads)
+                try:
+                    shell("fasterq-dump --temp {tmp} {targ} {extra} {outarg} {outdir}/{accession}")
+                except CalledProcessError as err:
+                    logger.error('Failed to partition SRA accession %s: %s', accession, err)
+                    success = False
+    if not success:
+        logger.error('Unable to successfully partition all SRA data')
+    return success
+
+
+def pull_sra_data(accession, outdir):
+    if os.path.exists(os.path.join(outdir, accession)):
+        logger.info('SRA data for %s already exists.', accession)
         return True
-    return None
+    try:
+        shell("prefetch --quiet --log-level 0 --output-file {outdir}/{accession} {accession}")
+    except CalledProcessError as err:
+        logger.error('Snakemake shell returned %s', err)
+        return False
+    return True
 
 
 def write_samples_and_units_tsv(samples, units):
