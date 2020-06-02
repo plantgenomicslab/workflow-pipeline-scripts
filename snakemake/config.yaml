@@ -92,3 +92,81 @@ sradata:
     label: sampleC
     condition: ongoing
     unit: rep3
+##
+# Parameters for SRA data pull, populates samples.tsv and units.tsv
+sradata:
+  method: fasterq
+  outdir: data/reads
+  sra_list:
+  -
+    id: SRR000001
+    label: sampleA
+    condition: control
+    unit: rep1
+    suffixes:
+    - _1.fastq
+    - _2.fastq
+  -
+    id: SRR000002
+    label: sampleA
+    condition: control
+    unit: rep2
+    suffixes:
+    - _1.fastq
+    - _2.fastq
+  -
+    id: SRR000003
+    label: sampleA
+    condition: control
+    unit: rep3
+    suffixes:
+    - _1.fastq
+    - _2.fastq
+  -
+    id: SRR000004
+    label: sampleB
+    condition: week7
+    unit: rep1
+    suffixes:
+    - _1.fastq
+    - _2.fastq
+  -
+    id: SRR000005
+    label: sampleB
+    condition: week7
+    unit: rep2
+    suffixes:
+    - _1.fastq
+    - _2.fastq
+  -
+    id: SRR000006
+    label: sampleB
+    condition: week7
+    unit: rep3
+    suffixes:
+    - _1.fastq
+    - _2.fastq
+  -
+    id: SRR000007
+    label: sampleC
+    condition: ongoing
+    unit: rep1
+    suffixes:
+    - _1.fastq
+    - _2.fastq
+  -
+    id: SRR000008
+    label: sampleC
+    condition: ongoing
+    unit: rep2
+    suffixes:
+    - _1.fastq
+    - _2.fastq
+  -
+    id: SRR000009
+    label: sampleC
+    condition: ongoing
+    unit: rep3
+    suffixes:
+    - _1.fastq
+    - _2.fastq

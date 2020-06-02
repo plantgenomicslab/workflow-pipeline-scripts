@@ -74,8 +74,13 @@ def generate_samples_and_units(samples, units):
 
 def populate(config, threads=0):
     if not config:
-        logger.error('No configuration provided')
-        return None
+        if not snakemake.input:
+            logger.error('No configuration provided')
+            return None
+        config = get_config_from_file(snakemake.input)
+        if not config:
+            logger.error('Unable to get config from %s', snakemake.input)
+            return None
     sradata = get_sradata_from_config(config)
     if not sradata:
         logger.error('No SRA data found in configuration')
@@ -122,12 +127,18 @@ def partition_sra_data(config, sra_ids, threads=0):
                 threads = ""
         elif not isinstance(threads, int):
             threads = ""
+    elif snakemake.threads:
+        threads = str(snakemake.threads)
     else:
         threads = ""
 
     success = True
     for accession in sra_ids:
-        suffixes = ['.fastq', '_1.fastq', '_2.fastq']
+        suffixes = ['.fastq']
+        for entry in config.get('sra_list'):
+            if entry.get('id') == accession and entry.get('suffixes'):
+                suffixes = entry.get('suffixes')
+                break
         partitioned = True
         for path in [os.path.join(outdir, f"{accession}{suffix}") for suffix in suffixes]:
             if not os.path.exists(path):
