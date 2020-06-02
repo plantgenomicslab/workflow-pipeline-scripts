@@ -127,10 +127,6 @@ def partition_sra_data(config, sra_ids, threads=0):
 
     success = True
     for accession in sra_ids:
-        if not pull_sra_data(accession, outdir):
-            logger.error('Unable to successfully pull all SRA data for %s', accession)
-            success = False
-            continue
         suffixes = ['.fastq', '_1.fastq', '_2.fastq']
         partitioned = True
         for path in [os.path.join(outdir, f"{accession}{suffix}") for suffix in suffixes]:
@@ -144,6 +140,11 @@ def partition_sra_data(config, sra_ids, threads=0):
         for path in [os.path.join(outdir, f"{accession}{suffix}") for suffix in suffixes]:
             if os.path.exists(path):
                 os.unlink(path)
+        if not pull_sra_data(accession, outdir):
+            logger.error('Unable to successfully pull all SRA data for %s', accession)
+            success = False
+            continue
+        _success = True
         with tempfile.TemporaryDirectory() as tmp:
             if method == 'fastq':
                 args = argparse.Namespace()
@@ -167,7 +168,7 @@ def partition_sra_data(config, sra_ids, threads=0):
                 for path in [os.path.join(outdir, f"{accession}{suffix}") for suffix in suffixes]:
                     if not os.path.exists(path):
                         logger.error('Failed to partition SRA accession %s', accession)
-                        success = False
+                        _success = False
             elif method == 'fasterq':
                 outarg = f"--outdir {outdir}"
                 targ = f"--threads {threads}" if threads else ""
@@ -176,7 +177,13 @@ def partition_sra_data(config, sra_ids, threads=0):
                     shell("fasterq-dump --temp {tmp} {targ} {extra} {outarg} {outdir}/{accession}")
                 except CalledProcessError as err:
                     logger.error('Failed to partition SRA accession %s: %s', accession, err)
-                    success = False
+                    _success = False
+        if _success:
+            # Don't need to retain transient SRA data file now that the partitioned files are present
+            if os.path.exists(os.path.join(outdir, accession)):
+                os.unlink(os.path.join(outdir, accession))
+        else:
+            success = False
     if not success:
         logger.error('Unable to successfully partition all SRA data')
     return success
