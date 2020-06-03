@@ -46,9 +46,10 @@ def get_samples_and_units(config):
         accession = sra.get('id')
         condition = sra.get('condition')
         unit = sra.get('unit')
+        suffixes = sra.get('suffixes', ['.fastq'])
         sra_ids.append(accession)
         samples.append([label, condition])
-        units.append([label, unit, f"{outdir}/{accession}_1.fastq", f"{outdir}/{accession}_2.fastq"])
+        units.append([label, unit] + [f"{outdir}/{accession}{suffix}" for suffix in suffixes])
     return samples, sra_ids, units
 
 
