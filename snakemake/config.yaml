@@ -99,7 +99,7 @@ sradata:
   outdir: data/reads
   sra_list:
   -
-    id: SRR000001
+    id: SRR4015222
     label: sampleA
     condition: control
     unit: rep1
@@ -107,7 +107,7 @@ sradata:
     - _1.fastq
     - _2.fastq
   -
-    id: SRR000002
+    id: SRR4015224
     label: sampleA
     condition: control
     unit: rep2
@@ -115,7 +115,7 @@ sradata:
     - _1.fastq
     - _2.fastq
   -
-    id: SRR000003
+    id: SRR4015214
     label: sampleA
     condition: control
     unit: rep3
@@ -123,7 +123,7 @@ sradata:
     - _1.fastq
     - _2.fastq
   -
-    id: SRR000004
+    id: SRR3657709
     label: sampleB
     condition: week7
     unit: rep1
@@ -131,7 +131,7 @@ sradata:
     - _1.fastq
     - _2.fastq
   -
-    id: SRR000005
+    id: SRR4015225
     label: sampleB
     condition: week7
     unit: rep2
@@ -139,7 +139,7 @@ sradata:
     - _1.fastq
     - _2.fastq
   -
-    id: SRR000006
+    id: SRR4015226
     label: sampleB
     condition: week7
     unit: rep3
@@ -147,7 +147,7 @@ sradata:
     - _1.fastq
     - _2.fastq
   -
-    id: SRR000007
+    id: SRR4015221
     label: sampleC
     condition: ongoing
     unit: rep1
@@ -155,7 +155,7 @@ sradata:
     - _1.fastq
     - _2.fastq
   -
-    id: SRR000008
+    id: SRR4015212
     label: sampleC
     condition: ongoing
     unit: rep2
@@ -163,7 +163,7 @@ sradata:
     - _1.fastq
     - _2.fastq
   -
-    id: SRR000009
+    id: SRR4015213
     label: sampleC
     condition: ongoing
     unit: rep3
