@@ -710,5 +710,13 @@ for LIB in ModelerID.lib ModelerUnknown.lib allMITE_LTR.lib; do
         exit 1
     fi
 done
+## allMITE_LTR classify
+
+$PERL $DIR_RD/RepeatClassifier -pa $NCPU  -consensi allMITE_LTR.libnoProtFinal
+    if [ ! -e  allMITE_LTR.libnoProtFinal.classified ]; then
+        echo "ERROR: RepeatClassifier output file not found" >&2
+        exit 1
+    fi
+cat allMITE_LTR.libnoProtFinal.classified  ModelerUnknown.libnoProtFinal ModelerID.libnoProtFinal >> allRepeats.lib
 
 echo "Run complete"
