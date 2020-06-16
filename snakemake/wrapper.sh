@@ -6,5 +6,5 @@ snakemake --cluster-config cluster.json \
           --use-conda \
           --use-singularity \
           --cores 8 \
-          $@
+          "$@"
 
