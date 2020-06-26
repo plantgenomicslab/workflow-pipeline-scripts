@@ -17,6 +17,6 @@ while read f1 f2; do
     no=1
     curr_geneid=$geneid
   fi
-  echo $f1 $f2 $curr_geneid.p$no
+  echo $f1 $f2 $curr_geneid.t$no
   ((no+=1))
 done < <(sort -k1.1,1.12 -k2nr $input)
