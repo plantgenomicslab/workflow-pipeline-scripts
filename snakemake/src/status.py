@@ -11,7 +11,7 @@
 #SBATCH --mail-user=wyim@unr.edu
 #SBATCH --output=sbatch.out
 #SBATCH --error=sbatch.err
- conda activate base
+ #conda activate base
 ##
 # Based upon the process documented in:
 # http://weatherby.genetics.utah.edu/MAKER/wiki/index.php/Repeat_Library_Construction-Advanced
