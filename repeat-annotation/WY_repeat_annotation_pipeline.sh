@@ -11,7 +11,7 @@
 #SBATCH --mail-user=wyim@unr.edu
 #SBATCH --output=sbatch.out
 #SBATCH --error=sbatch.err
- conda activate base
+# conda activate base
 ##
 # Based upon the process documented in:
 # http://weatherby.genetics.utah.edu/MAKER/wiki/index.php/Repeat_Library_Construction-Advanced
@@ -28,7 +28,8 @@ GPFS_HOME=/data/gpfs/home
 # Scratch
 SCRATCH=/data/gpfs/home/wyim/scratch/
 # Working directory
-WORKDIR=$SCRATCH/data/opuntia_coche/repeat_annotation
+WORKDIR=/data/gpfs/home/wyim/scratch/data/iceplant/repeat
+#WORKDIR=$SCRATCH/data/opuntia_coche/repeat_annotation
 # Do we need some temp space..?
 TMPDIR=$SCRATCH/tmp
 # Shared reference data
@@ -58,7 +59,7 @@ DATADIR=$SCRATCH/bin/REPET/dataref
 #
 # Let's get to work...
 pushd $WORKDIR > /dev/null
-genome=Opuntia
+genome=iceplant
 seqfile1=$WORKDIR/genome.fa
 if [ ! -e $seqfile1 ]; then
     echo "ERROR: Sequence file $seqfile1 not found" >&2
@@ -96,7 +97,7 @@ if [ ! -s results/$genome/all.fasta ]; then
     echo "ERROR: MITE Tracker output file results/$genome/all.fasta not found" >&2
     exit 1
 fi
-cp results/$genome/all.fasta > ../MITE.lib
+cp results/$genome/all.fasta ../MITE.lib
 popd >/dev/null 2>&1
 
 ##
@@ -563,10 +564,10 @@ for F in LTR85.lib.{masked,out}; do
 done
 
 $PERL $DIR_CRL/remove_masked_sequence.pl --masked_elements LTR85.lib.masked --outfile FinalLTR85.lib
-if [ "$?" != "0" ]; then
-    echo "ERROR: remove_masked_sequence.pl exited non-zero[$?]" >&2
-    exit 1
-fi
+#if [ "$?" != "0" ]; then
+#    echo "ERROR: remove_masked_sequence.pl exited non-zero[$?]" >&2
+#    exit 1
+#fi
 if [ ! -e FinalLTR85.lib ]; then
     echo "ERROR: remove_masked_sequence.pl output file FinalLTR85.lib not found" >&2
     exit 1
@@ -635,18 +636,18 @@ CLASSIFIED=$(find . -name consensi.fa.classified)
 
 ##
 # the file consensi.fa.classified will be in a RM_<PID>.<TIMESTAMP> subdirectory. need to find it...
-$PERL $DIR_CRL/repeatmodeler_parse.pl --fastafile $CLASSIFIED --unknowns repeatmodeler_unknowns.fasta \
+$PERL $DIR_CRL/repeatmodeler_parse.pl --fastafile $CLASSIFIED --unknowns repeatmodeler_unknowns.
     --identities repeatmodeler_identities.fasta
-if [ "$?" != "0" ]; then
-    echo "ERROR: repeatmodeler_parse.pl exited not-zero[$?]" >&2
-    exit 1
-fi
-for F in repeatmodeler_{unknowns,identities}.fasta; do
-    if [ ! -e $F ]; then
-        echo "ERROR: repeatmodeler_parse.pl output file $F not found" >&2
-        exit 1
-    fi
-done
+#if [ "$?" != "0" ]; then
+ #   echo "ERROR: repeatmodeler_parse.pl exited not-zero[$?]" >&2
+ #   exit 1
+#fi
+#for F in repeatmodeler_{unknowns,identities}.fasta; do
+ #   if [ ! -e $F ]; then
+ #       echo "ERROR: repeatmodeler_parse.pl output file $F not found" >&2
+ #       exit 1
+ #   fi
+#done
 
 if [ ! -e $DATADIR/repbase20.05_aaSeq_cleaned_TE.fa.pin ]; then
     $DIR_BLAST/makeblastdb -in $DATADIR/repbase20.05_aaSeq_cleaned_TE.fa -dbtype prot
@@ -687,7 +688,7 @@ if [ ! -e $DATADIR/uniprot_sprot.fasta.pin ]; then
         exit 1
     fi
 fi
-
+ q
 for LIB in ModelerID.lib ModelerUnknown.lib allMITE_LTR.lib; do
     $DIR_BLAST/blastx -query $LIB -db $DATADIR/uniprot_sprot.fasta -evalue 1e-10 -num_descriptions 10 -num_threads $NCPU \
         -out ${LIB}_blast_results.txt
