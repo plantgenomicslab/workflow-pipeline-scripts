@@ -696,4 +696,6 @@ python /data/gpfs/home/wyim/scratch/bin/TEsorter/TEsorter.py consensi.fa.classif
 #    fi
 #cat allMITE_LTR.libnoProtFinal.classified  ModelerUnknown.libnoProtFinalnoProtFinal >> allRepeats.lib
 
+sed 's/\ .*//g' consensi.fa.classified.cln.rexdb.cls.lib >>  allRepeats.lib
+
 echo "Run complete"
