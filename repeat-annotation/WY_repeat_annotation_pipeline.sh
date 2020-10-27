@@ -636,8 +636,7 @@ CLASSIFIED=$(find . -name consensi.fa.classified)
 
 ##
 # the file consensi.fa.classified will be in a RM_<PID>.<TIMESTAMP> subdirectory. need to find it...
-$PERL $DIR_CRL/repeatmodeler_parse.pl --fastafile $CLASSIFIED --unknowns repeatmodeler_unknowns.
-    --identities repeatmodeler_identities.fasta
+# $PERL $DIR_CRL/repeatmodeler_parse.pl --fastafile $CLASSIFIED --unknowns repeatmodeler_unknowns.fasta --identities repeatmodeler_identities.fasta
 #if [ "$?" != "0" ]; then
  #   echo "ERROR: repeatmodeler_parse.pl exited not-zero[$?]" >&2
  #   exit 1
@@ -649,75 +648,52 @@ $PERL $DIR_CRL/repeatmodeler_parse.pl --fastafile $CLASSIFIED --unknowns repeatm
  #   fi
 #done
 
-if [ ! -e $DATADIR/repbase20.05_aaSeq_cleaned_TE.fa.pin ]; then
-    $DIR_BLAST/makeblastdb -in $DATADIR/repbase20.05_aaSeq_cleaned_TE.fa -dbtype prot
-    if [ "$?" != "0" ]; then
-        echo "ERROR: makeblastdb exited non-zero[$?]" >&2
-        exit 1
-    fi
-fi
-$DIR_BLAST/blastx -query repeatmodeler_unknowns.fasta -db $DATADIR/repbase20.05_aaSeq_cleaned_TE.fa -evalue 1e-10 -num_descriptions 10 -num_threads $NCPU \
-    -out modelerunknown_blast_results.txt
-if [ "$?" != "0" ]; then
-    echo "ERROR: blastx exited non-zero[$?]" >&2
-    exit 1
-fi
-if [ ! -s modelerunknown_blast_results.txt ]; then
-    echo "ERROR: zero-length output file from blastx: modelerunknown_blast_results.txt" >&2
-    exit 1
-fi
-$PERL $DIR_CRL/transposon_blast_parse.pl --blastx modelerunknown_blast_results.txt --modelerunknown repeatmodeler_unknowns.fasta
-if [ "$?" != "0" ]; then
-    echo "ERROR: transposon_blast_parse.pl exited non-zero[$?]" >&2
-    exit 1
-fi
-if [ ! -s unknown_elements.txt ]; then
-    echo "ERROR: zero-length output file from transposon_blast_parse.pl" >&2
-    exit 1
-fi
-
-mv unknown_elements.txt ModelerUnknown.lib
-cat identified_elements.txt repeatmodeler_identities.fasta > ModelerID.lib
-
-##
 # Exclusion of gene fragments
-if [ ! -e $DATADIR/uniprot_sprot.fasta.pin ]; then
-    $DIR_BLAST/makeblastdb -in $DATADIR/uniprot_sprot.fasta -type prot
-    if [ "$?" != "0" ]; then
-        echo "ERROR: makeblastdb exited non-zero[$?]" >&2
-        exit 1
-    fi
-fi
- q
-for LIB in ModelerID.lib ModelerUnknown.lib allMITE_LTR.lib; do
-    $DIR_BLAST/blastx -query $LIB -db $DATADIR/uniprot_sprot.fasta -evalue 1e-10 -num_descriptions 10 -num_threads $NCPU \
-        -out ${LIB}_blast_results.txt
-    if [ "$?" != "0" ]; then
-        echo "ERROR: blastx of $LIB exited non-zero[$?]" >&2
-        exit 1
-    fi
-    if [ ! -s ${LIB}_blast_results.txt ]; then
-        echo "ERROR: zero-length output file from blastx: ${LIB}_blast_results.txt" >&2
-        exit 1
-    fi
+# if [ ! -e $DATADIR/uniprot_sprot.fasta.pin ]; then
+#     $DIR_BLAST/makeblastdb -in $DATADIR/uniprot_sprot.fasta -type prot
+#     if [ "$?" != "0" ]; then
+#         echo "ERROR: makeblastdb exited non-zero[$?]" >&2
+#         exit 1
+#     fi
+# fi
 
-    $PERL $DIR_PE/ProtExcluder.pl ${LIB}_blast_results.txt ${LIB}
-    if [ "$?" != "0" ]; then
-        echo "ERROR: ProtExcluder.pl exited non-zero[$?]" >&2
-        exit 1
-    fi
-    if [ ! -e ${LIB}noProtFinal ]; then
-        echo "ERROR: ProtExcluder.pl output file ${LIB}noProtFinal not found" >&2
-        exit 1
-    fi
-done
+# for LIB in ModelerID.lib ModelerUnknown.lib allMITE_LTR.lib; do
+#     $DIR_BLAST/blastx -query $LIB -db $DATADIR/uniprot_sprot.fasta -evalue 1e-10 -num_descriptions 10 -num_threads $NCPU \
+#         -out ${LIB}_blast_results.txt
+#     if [ "$?" != "0" ]; then
+#         echo "ERROR: blastx of $LIB exited non-zero[$?]" >&2
+#         exit 1
+#     fi
+#     if [ ! -s ${LIB}_blast_results.txt ]; then
+#         echo "ERROR: zero-length output file from blastx: ${LIB}_blast_results.txt" >&2
+#         exit 1
+#     fi
+
+#     $PERL $DIR_PE/ProtExcluder.pl ${LIB}_blast_results.txt ${LIB}
+#     if [ "$?" != "0" ]; then
+#         echo "ERROR: ProtExcluder.pl exited non-zero[$?]" >&2
+#         exit 1
+#     fi
+#     if [ ! -e ${LIB}noProtFinal ]; then
+#         echo "ERROR: ProtExcluder.pl output file ${LIB}noProtFinal not found" >&2
+#         exit 1
+#     fi
+# done
+# ## allMITE_LTR classify
 ## allMITE_LTR classify
 
-$PERL $DIR_RD/RepeatClassifier -pa $NCPU  -consensi allMITE_LTR.libnoProtFinal
-    if [ ! -e  allMITE_LTR.libnoProtFinal.classified ]; then
-        echo "ERROR: RepeatClassifier output file not found" >&2
-        exit 1
-    fi
-cat allMITE_LTR.libnoProtFinal.classified  ModelerUnknown.libnoProtFinal ModelerID.libnoProtFinal >> allRepeats.lib
+cp  ./RM*/consensi.fa.classified  .
+
+perl ~/scratch/bin/EDTA/util/cleanup_nested.pl  -in  consensi.fa.classified -cov 0.95 -minlen 80 -miniden 80 -t 24
+
+python /data/gpfs/home/wyim/scratch/bin/TEsorter/TEsorter.py consensi.fa.classified.cln
+
+
+#$PERL $DIR_RD/RepeatClassifier -pa $NCPU  -consensi allMITE_LTR.libnoProtFinal
+#    if [ ! -e  allMITE_LTR.libnoProtFinal.classified ]; then
+#        echo "ERROR: RepeatClassifier output file not found" >&2
+#        exit 1
+#    fi
+#cat allMITE_LTR.libnoProtFinal.classified  ModelerUnknown.libnoProtFinalnoProtFinal >> allRepeats.lib
 
 echo "Run complete"
